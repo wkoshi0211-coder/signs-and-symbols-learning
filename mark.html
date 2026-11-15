@@ -43,29 +43,25 @@ body{display:flex;align-items:center;justify-content:center}
 }
 
 #app[hidden], #findActivity[hidden]{display:none}
-#findActivity{width:min(96vw,950px);max-height:100dvh;padding:12px 0;display:grid;justify-items:center;gap:10px}
-#findPrompt{margin:0;display:flex;align-items:center;justify-content:center;gap:12px;font-size:clamp(17px,3.1vw,30px);font-weight:750;line-height:1.25}
-#findCount{font-size:15px;color:#374151}
-#findScene{position:relative;width:min(96vw,950px,137dvh);aspect-ratio:8/5;overflow:hidden;border:2px solid #343f48;border-radius:18px;background:#e4eff3}
-#findArt{display:block;width:100%;height:100%}
-.find-target{position:absolute;transform:translate(-50%,-50%);width:clamp(52px,10%,88px);height:clamp(48px,17%,76px);padding:3px;background:transparent;border:0;border-radius:9px;display:grid;place-items:center;touch-action:manipulation;cursor:pointer}
-.find-target:focus-visible{outline:4px solid #1d55b2;outline-offset:2px}
-.find-target.found{outline:4px solid #14714d;background:#e6fff380}
-.find-icon{width:clamp(42px,7vw,68px);height:clamp(30px,5vw,48px);display:flex;align-items:center;justify-content:center;border-radius:5px;border:2px solid #fff;box-shadow:0 0 0 1px #263746;background:#204e80;color:#fff;font-weight:800;line-height:1;text-align:center;font-size:clamp(14px,2.4vw,25px)}
-.find-icon.exit,.find-icon.route{background:#08744f}
-.find-icon.route{font-size:clamp(8px,1.32vw,13px);white-space:nowrap}
-.find-icon.stop{background:#ffe166;color:#382a1f;border:2px solid #bc2934;font-size:clamp(13px,2vw,21px)}
-.find-icon.music{background:#603f78;font-size:clamp(20px,3.5vw,31px)}
-.find-icon.crossing{background:#2059a3}
-.find-icon svg{width:92%;height:94%}
-@media (max-height:480px){#findActivity{gap:4px;padding:5px 0}#findScene{width:min(94vw,120dvh)}#findPrompt{font-size:16px}.find-icon{height:29px;width:46px}}
+#findActivity{width:min(96vw,1024px);max-height:100dvh;padding:10px 0;display:grid;justify-items:center;gap:8px}
+#findPrompt{margin:0;font-size:clamp(19px,3.4vw,32px);line-height:1.2;text-align:center}
+#findProgress{display:flex;gap:8px}
+#findProgress span{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;border:2px solid #61726a;color:#fff;font-size:13px;font-weight:bold}
+#findProgress .found{background:#08744f;border-color:#08744f}
+#findScene{position:relative;width:min(96vw,1024px,calc((100dvh - 94px) * 1.6));overflow:hidden;border-radius:12px}
+#findArt{display:block;width:100%;aspect-ratio:8/5;object-fit:fill;user-select:none;-webkit-user-drag:none}
+.find-target{position:absolute;border:0;border-radius:7px;padding:0;background:transparent;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.find-target:focus-visible{outline:3px solid #155dcc;outline-offset:2px}
+.find-target.found{outline:3px solid #14714d;box-shadow:0 0 0 2px white;cursor:default}
+.find-target.found::after{content:'✓';position:absolute;top:0;right:0;transform:translate(35%,-35%);width:24px;height:24px;display:grid;place-items:center;border-radius:50%;background:#08744f;color:white;border:2px solid white;font-size:16px;font-weight:bold}
+@media(max-height:420px){#findActivity{padding:4px 0;gap:4px}#findScene{width:min(96vw,calc((100dvh - 60px) * 1.6))}}
 </style>
 </head>
 <body>
 <section id="findActivity" aria-labelledby="findPrompt">
-  <div id="findCount"></div>
-  <h1 id="findPrompt" aria-live="polite"><span id="findExample" aria-hidden="true"></span><span id="findInstruction"></span></h1>
-  <div id="findScene"><canvas id="findArt" width="800" height="500" role="img"></canvas></div>
+  <h1 id="findPrompt">しるしをタッチして</h1>
+  <div id="findProgress" role="status"></div>
+  <div id="findScene"><img id="findArt" alt="" draggable="false"></div>
 </section>
 <main id="app" hidden aria-label="マークと生活場面の学習">
   <div id="progress"></div>
@@ -235,141 +231,76 @@ window.addEventListener('resize',finishDrag);
 const findActivity=document.getElementById('findActivity');
 const dragActivity=document.getElementById('app');
 const findScene=document.getElementById('findScene');
-const art=document.getElementById('findArt');
-const context=art.getContext('2d');
-const person='<circle cx="0" cy="-12" r="3.6"/><path d="M-4-7h8l3 13H4l-1 12H0L-1 6l-1 12h-3V6h-2z"/>';
-const walker='<circle cx="3" cy="-12" r="3.5"/><path d="m2-7 5 6 6 2-1 3-7-2-2-3-2 6 7 11-4 2-7-11-6 10-4-2 9-15 2-5-5 4-3-2 8-7z"/>';
-function icon(kind,body){
- return '<span class="find-icon '+kind+'" aria-hidden="true">'+body+'</span>';
-}
-function pictogram(kind,body){
- return icon(kind,'<svg viewBox="0 0 64 44" fill="currentColor" xmlns="http://www.w3.org/2000/svg">'+body+'</svg>');
-}
+const findArt=document.getElementById('findArt');
+const findProgress=document.getElementById('findProgress');
 const findLessons=[
- {name:'がっこうの ろうか',targets:[
-  {label:'トイレの マーク',x:20,y:34,sign:pictogram('toilet','<g transform="translate(20 20)">'+person+'</g><path d="M31 4h2v36h-2z"/><g transform="translate(44 20)">'+person+'</g>')},
-  {label:'ひじょうぐちの マーク',x:52,y:27,sign:pictogram('exit','<path d="M18 7h28v30h-4V11H22v26h-4z"/><g transform="translate(31 21) scale(.72)">'+walker+'</g><path d="m53 16 8 6-8 6v-4h-7v-4h7z"/>')},
-  {label:'おんがくしつの マーク',x:79,y:34,sign:icon('music','♫')},
+ {image:'school-hall.jpg',alt:'学校の廊下',targets:[
+  {label:'トイレのマーク',bounds:[10,22,10,22]},
+  {label:'非常口の表示灯',bounds:[45.5,25,11,10]},
+  {label:'音楽室のマーク',bounds:[88,19,10,23]},
  ]},
- {name:'つうがくろ',targets:[
-  {label:'「とまれ」の ひょうじ',x:25,y:54,sign:icon('stop','とまれ')},
-  {label:'おうだんほどうの マーク',x:65,y:42,sign:pictogram('crossing','<path d="m32 4 23 34H9z" fill="#fff"/><g transform="translate(31 26) scale(.52)" fill="#2059a3">'+walker+'</g><path d="M22 34h20v2H22z" fill="#2059a3"/>')},
-  {label:'「つうがくろ」の ひょうじ',x:87,y:33,sign:icon('route','つうがくろ')},
+ {image:'school-route.jpg',alt:'交差点のある通学路',targets:[
+  {label:'一時停止の標識',bounds:[7.5,23.5,19.5,27]},
+  {label:'横断歩道の標識',bounds:[44.5,20.5,10,16]},
+  {label:'歩行者専用の標識',bounds:[74.5,21.5,11.5,19]},
  ]},
 ];
 let lessonIndex=0;
-let targetIndex=0;
-const answerButtons=[];
-function shape(color,points,stroke){
- context.beginPath();
- points.forEach(([x,y],i)=>i?context.lineTo(x,y):context.moveTo(x,y));
- context.closePath();
- context.fillStyle=color;
- context.fill();
- if(stroke){context.strokeStyle=stroke;context.lineWidth=3;context.stroke();}
-}
-function block(x,y,w,h,color){context.fillStyle=color;context.fillRect(x,y,w,h);}
-function round(x,y,r,color){context.beginPath();context.arc(x,y,r,0,Math.PI*2);context.fillStyle=color;context.fill();}
-function drawHall(){
- block(0,0,800,500,'#f8ead1');
- shape('#fff7e6',[[0,0],[800,0],[590,98],[290,98]]);
- shape('#b4c2cb',[[0,455],[290,310],[590,310],[800,455],[800,500],[0,500]]);
- block(0,0,800,8,'#d7c7b2');
- shape('#d3bd9d',[[0,425],[290,298],[590,298],[800,425],[800,449],[590,319],[290,319],[0,449]]);
- block(291,99,298,199,'#fff4df');
- block(349,163,132,158,'#495b68');
- block(356,169,118,151,'#89b0b5');
- block(372,181,85,65,'#d1eefa');
- block(450,265,11,5,'#eaf2f2');
- block(520,144,48,80,'#d7eef6');
- block(541,144,4,80,'#8ba5aa');
- shape('#789eae',[[75,143],[211,181],[211,356],[75,411]],'#445a68');
- shape('#cce8ed',[[89,163],[191,191],[191,250],[89,239]]);
- shape('#d49d6d',[[586,173],[720,125],[720,411],[586,347]],'#765541');
- shape('#ffe7b8',[[603,184],[697,153],[697,233],[603,247]]);
- block(655,295,18,5,'#66554b');
- shape('#fffdf0',[[337,20],[487,20],[465,45],[357,45]]);
- shape('#fffdf0',[[373,60],[458,60],[448,76],[384,76]]);
- shape('#9eaeb8',[[195,500],[354,321],[362,321],[208,500]]);
- shape('#9eaeb8',[[633,500],[468,321],[476,321],[647,500]]);
-}
-function drawStreet(){
- block(0,0,800,500,'#bfe8f4');
- round(110,74,34,'#fffbea'); round(154,69,45,'#fffbea'); round(193,80,25,'#fffbea');
- block(0,201,800,299,'#a1c885');
- for(const [x,y,wall,roof] of [[36,122,'#fff1c9','#b76551'],[188,137,'#fae3cf','#6f869b'],[596,116,'#fcebc7','#9d6257']]){
-   block(x,y,135,110,wall);
-   shape(roof,[[x-10,y+4],[x+66,y-43],[x+145,y+4]]);
-   block(x+22,y+30,41,30,'#91c3da'); block(x+80,y+51,32,59,'#ac8169');
+let foundCount=0;
+
+function showFindProgress(total){
+ findProgress.setAttribute('aria-label',total+'つのうち'+foundCount+'つ見つけました');
+ findProgress.replaceChildren();
+ for(let i=0;i<total;i++){
+   const mark=document.createElement('span');
+   mark.setAttribute('aria-hidden','true');
+   if(i<foundCount){
+     mark.className='found';
+     mark.textContent='✓';
+   }
+   findProgress.appendChild(mark);
  }
- for(const [x,y] of [[15,182],[295,174],[752,142],[787,203]]){
-   block(x-6,y,12,72,'#876545'); round(x,y,34,'#5e9b71'); round(x-12,y-9,20,'#73ad77');
- }
- shape('#ddd1b6',[[313,236],[558,236],[800,463],[800,500],[0,500],[0,460]]);
- shape('#626f79',[[370,235],[521,235],[800,500],[93,500]]);
- for(let i=0;i<6;i++){
-   const x=252+i*57;
-   shape('#fffdf0',[[x,389],[x+31,389],[x+47,421],[x+11,421]]);
- }
- block(194,267,10,76,'#6d767c'); block(516,212,8,135,'#6d767c'); block(692,166,8,121,'#6d767c');
 }
-function showFindPrompt(){
- const lesson=findLessons[lessonIndex];
- const target=lesson.targets[targetIndex];
- document.getElementById('findCount').textContent=lesson.name+'　'+(targetIndex+1)+' / '+lesson.targets.length;
- document.getElementById('findExample').innerHTML=target.sign;
- document.getElementById('findInstruction').textContent=target.label+'を さがそう';
-}
+
 function renderFindScene(){
  const lesson=findLessons[lessonIndex];
- art.setAttribute('aria-label',lesson.name+'の イラスト');
- if(lessonIndex===0) drawHall(); else drawStreet();
- answerButtons.splice(0).forEach(button=>button.remove());
- lesson.targets.forEach((target,i)=>{
+ foundCount=0;
+ findArt.alt=lesson.alt;
+ findArt.src=lesson.image;
+ findScene.replaceChildren(findArt);
+ lesson.targets.forEach(({label,bounds})=>{
+   const [left,top,width,height]=bounds.map(value=>value+'%');
    const button=document.createElement('button');
    button.type='button';
    button.className='find-target';
-   button.setAttribute('aria-label',target.label);
-   button.style.left=target.x+'%';
-   button.style.top=target.y+'%';
-   button.innerHTML=target.sign;
-   button.addEventListener('click',()=>checkFind(i,button));
-   answerButtons.push(button);
+   button.setAttribute('aria-label',label);
+   Object.assign(button.style,{left,top,width,height});
+   button.addEventListener('click',()=>{
+     button.disabled=true;
+     button.classList.add('found');
+     foundCount++;
+     showFindProgress(lesson.targets.length);
+     if(foundCount===lesson.targets.length) setTimeout(advanceFindScene,650);
+   });
    findScene.appendChild(button);
  });
- showFindPrompt();
+ showFindProgress(lesson.targets.length);
 }
-function checkFind(i,button){
- if(locked) return;
- locked=true;
- const correct=i===targetIndex;
- if(correct) button.classList.add('found');
- else normalFeedback.textContent='まちがい';
- const state=correct?'ok':'bad';
- feedback.classList.add(state);
- setTimeout(()=>{
-   feedback.classList.remove(state);
-   normalFeedback.textContent=normalMark;
-   button.classList.remove('found');
-   if(correct){
-     targetIndex++;
-     if(targetIndex===findLessons[lessonIndex].targets.length){
-       lessonIndex++;
-       targetIndex=0;
-       if(lessonIndex===findLessons.length){
-         findActivity.hidden=true;
-         dragActivity.hidden=false;
-         renderQuestion();
-       }else renderFindScene();
-     }else showFindPrompt();
-   }
-   locked=false;
- },correct?650:wrongFeedbackMs);
+
+function advanceFindScene(){
+ lessonIndex++;
+ if(lessonIndex<findLessons.length){
+   renderFindScene();
+   return;
+ }
+ findActivity.hidden=true;
+ dragActivity.hidden=false;
+ renderQuestion();
 }
+
 function startActivities(){
  index=0;
  lessonIndex=0;
- targetIndex=0;
  locked=false;
  finish.classList.remove('show');
  dragActivity.hidden=true;
