@@ -22,10 +22,14 @@ body{display:flex;align-items:center;justify-content:center}
 .choice{width:min(25vw,190px);height:min(21vh,155px);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;cursor:grab}
 .choice img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none}
 .choice.dragging{position:fixed;z-index:1000;pointer-events:none;transform:scale(1.08);opacity:.9;cursor:grabbing}
-#feedback{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity .12s}
+#feedback{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0}
 #feedback .mark{font-size:clamp(90px,20vw,170px);font-weight:800;color:#e60000}
-#feedback.ok{opacity:1}
-#feedback.bad{opacity:0}
+#feedback.ok{opacity:1;transition:opacity .12s}
+#feedback.bad{opacity:1;transition:none;z-index:1100;background:rgba(255,255,255,.66)}
+#feedback.bad .mark{font-size:clamp(44px,10vw,100px);color:#b00020;background:white;border-radius:20px;padding:.15em .45em}
+#signFrame{position:relative;display:flex;flex:none}
+#hint{position:absolute;border:4px solid #f07800;border-radius:8px;box-shadow:0 0 0 2px white;pointer-events:none}
+.choice.source{opacity:0}
 #finish{position:fixed;inset:0;background:#fff;display:none;align-items:center;justify-content:center;flex-direction:column;gap:18px}
 #finish.show{display:flex}
 #finish .star{font-size:clamp(100px,24vw,190px)}
@@ -63,7 +67,49 @@ const choices=document.getElementById('choices');
 const feedback=document.getElementById('feedback');
 const finish=document.getElementById('finish');
 const restart=document.getElementById('restart');
-let drag={el:null, clone:null, pointerId:null, startX:0, startY:0, correct:false};
+let drag=null;
+let locked=false;
+const wrongFeedbackMs=800;
+const normalFeedback=feedback.querySelector('.mark');
+const normalMark=normalFeedback.textContent;
+const signFrame=document.createElement('div');
+signFrame.id='signFrame';
+signEl.replaceWith(signFrame);
+signFrame.appendChild(signEl);
+const hint=document.createElement('div');
+hint.id='hint';
+hint.hidden=true;
+hint.setAttribute('aria-hidden','true');
+signFrame.appendChild(hint);
+
+// Bounds in percent of the displayed image, in question order.
+const hintBounds=[
+ [35,39,31,30], // Hospital cross
+ [21,37,33,51], // Litter and bin
+ [9,22,82,58], // Bicycle
+ [29,5,44,34], // Golf club
+ [14,10,77,78], // Airplane
+ [9,12,82,76], // Restroom figures
+ [10,12,80,81], // Tsunami evacuation pictogram
+ [22,20,57,65], // Yen symbol
+ [24,35,53,57], // Elevator car
+ [6,23,84,53], // Helicopter
+ [31,10,34,81], // Telephone handset
+ [22,8,52,86], // Fork and knife
+ [20,12,60,80], // Train and rails
+ [4,5,91,90], // Golfer putting
+ [10,19,30,42], // Tennis racket
+ [6,27,89,47], // Bus
+ [34,13,33,70], // Mobile phone
+ [19,7,64,86], // Key and locker
+ [33,18,35,67], // AED cross and heart
+];
+
+function showHint(){
+ const [left,top,width,height]=hintBounds[index];
+ Object.assign(hint.style,{left:left+'%',top:top+'%',width:width+'%',height:height+'%'});
+ hint.hidden=false;
+}
 
 function buildProgress(){
  progress.innerHTML='';
@@ -75,6 +121,7 @@ function buildProgress(){
  }
 }
 function renderQuestion(){
+ hint.hidden=true;
  if(index>=questions.length){finish.classList.add('show'); return;}
  finish.classList.remove('show');
  buildProgress();
@@ -88,53 +135,80 @@ function renderQuestion(){
    b.appendChild(img); choices.appendChild(b); attachDrag(b, sceneNo===q.scene);
  });
 }
-function point(e){return {x:e.clientX,y:e.clientY}}
+function isOverAnswer(e){
+ const r=answer.getBoundingClientRect();
+ return e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom;
+}
+
+function moveDrag(e){
+ drag.preview.style.left=(e.clientX-drag.offsetX)+'px';
+ drag.preview.style.top=(e.clientY-drag.offsetY)+'px';
+}
+
 function attachDrag(el,isCorrect){
+ const ownsDrag=e=>drag?.el===el && drag.pointerId===e.pointerId;
  el.addEventListener('pointerdown',e=>{
-   if(e.pointerType==='mouse' && e.button!==0) return;
+   if(locked || drag || !e.isPrimary || e.button!==0) return;
    e.preventDefault();
-   drag.el=el; drag.pointerId=e.pointerId; drag.correct=isCorrect;
    const r=el.getBoundingClientRect();
-   drag.startX=e.clientX-r.left; drag.startY=e.clientY-r.top;
-   el.classList.add('dragging');
-   el.style.left=(e.clientX-drag.startX)+'px'; el.style.top=(e.clientY-drag.startY)+'px';
-   el.style.width=r.width+'px'; el.style.height=r.height+'px';
-   document.body.appendChild(el);
-   try{el.setPointerCapture(e.pointerId)}catch(_){}
+   const preview=el.cloneNode(true);
+   preview.classList.add('dragging');
+   preview.setAttribute('aria-hidden','true');
+   Object.assign(preview.style,{width:r.width+'px',height:r.height+'px'});
+   el.setPointerCapture(e.pointerId);
+   drag={el,preview,pointerId:e.pointerId,offsetX:e.clientX-r.left,offsetY:e.clientY-r.top};
+   moveDrag(e);
+   el.classList.add('source');
+   document.body.appendChild(preview);
  });
  el.addEventListener('pointermove',e=>{
-   if(drag.el!==el || drag.pointerId!==e.pointerId) return;
-   e.preventDefault();
-   el.style.left=(e.clientX-drag.startX)+'px'; el.style.top=(e.clientY-drag.startY)+'px';
-   const ar=answer.getBoundingClientRect();
-   const inside=e.clientX>=ar.left && e.clientX<=ar.right && e.clientY>=ar.top && e.clientY<=ar.bottom;
-   answer.classList.toggle('active',inside);
+   if(!ownsDrag(e)) return;
+   moveDrag(e);
+   answer.classList.toggle('active',isOverAnswer(e));
  });
  el.addEventListener('pointerup',e=>{
-   if(drag.el!==el || drag.pointerId!==e.pointerId) return;
-   const ar=answer.getBoundingClientRect();
-   const inside=e.clientX>=ar.left && e.clientX<=ar.right && e.clientY>=ar.top && e.clientY<=ar.bottom;
-   finishDrag(inside && drag.correct);
+   if(!ownsDrag(e)) return;
+   const inside=isOverAnswer(e);
+   finishDrag();
+   if(!inside) return;
+   locked=true;
+   if(isCorrect){
+     answer.appendChild(el);
+     feedback.classList.add('ok');
+     setTimeout(()=>{
+       feedback.classList.remove('ok');
+       index++;
+       renderQuestion();
+       locked=false;
+     },650);
+   }else{
+     normalFeedback.textContent='まちがい';
+     feedback.classList.add('bad');
+     setTimeout(()=>{
+       feedback.classList.remove('bad');
+       normalFeedback.textContent=normalMark;
+       if(hint.hidden) showHint();
+       locked=false;
+     },wrongFeedbackMs);
+   }
  });
- el.addEventListener('pointercancel',()=>finishDrag(false));
+ const cancel=e=>{if(ownsDrag(e)) finishDrag();};
+ el.addEventListener('pointercancel',cancel);
+ el.addEventListener('lostpointercapture',cancel);
 }
-function finishDrag(correct){
- const el=drag.el;
- if(!el) return;
+
+function finishDrag(){
+ if(!drag) return;
+ const {el,preview,pointerId}=drag;
+ drag=null;
+ preview.remove();
+ el.classList.remove('source');
  answer.classList.remove('active');
- if(correct){
-   el.classList.remove('dragging');
-   el.style.position='static'; el.style.left=''; el.style.top=''; el.style.width=''; el.style.height='';
-   answer.appendChild(el);
-   feedback.classList.add('ok');
-   setTimeout(()=>{feedback.classList.remove('ok'); index++; renderQuestion();},650);
- }else{
-   el.classList.remove('dragging');
-   el.style.position=''; el.style.left=''; el.style.top=''; el.style.width=''; el.style.height='';
-   choices.appendChild(el);
- }
- drag={el:null,clone:null,pointerId:null,startX:0,startY:0,correct:false};
+ if(el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
 }
+
+window.addEventListener('blur',finishDrag);
+window.addEventListener('resize',finishDrag);
 restart.addEventListener('click',()=>{index=0;renderQuestion();});
 renderQuestion();
 </script>
